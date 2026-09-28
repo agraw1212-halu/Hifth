@@ -97,7 +97,10 @@ class QuranApi {
                 transliteration = word.getAsJsonObject("transliteration")?.string("text").orEmpty(),
                 root = word.string("root"),
                 lemma = word.string("lemma"),
-                grammar = word.string("grammar")
+                grammar = word.string("grammar"),
+                charType = word.string("char_type_name").ifBlank { "word" },
+                audioUrl = word.string("audio_url").ifBlank { null },
+                position = word.int("position").takeIf { it > 0 }
             )
         }.orEmpty()
         QuranVerse(

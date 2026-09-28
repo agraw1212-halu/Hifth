@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,20 +18,23 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -42,6 +46,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -67,6 +72,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
@@ -89,7 +95,13 @@ import java.text.DateFormat
 import java.util.Date
 
 private enum class AppTab(val label: String) {
-    Read("Read"), Practice("Practice"), Plan("Plan"), Progress("Progress"), Record("Listen")
+    Home("Home"), Read("Read"), Hifz("Hifz"), Quiz("Quiz"), Progress("Progress"), Listen("Listen")
+}
+
+private fun resolveWordAudio(path: String): String = when {
+    path.startsWith("http") -> path
+    path.startsWith("wbw/") -> "https://audio.qurancdn.com/$path"
+    else -> "https://verses.quran.com/$path"
 }
 
 @Composable
@@ -101,7 +113,8 @@ fun HifthApp(viewModel: HifthViewModel) {
     val recordings by viewModel.recordings.collectAsStateWithLifecycle(initialValue = emptyList())
     val weakSpots by viewModel.weakSpots.collectAsStateWithLifecycle(initialValue = emptyList())
     val streak by viewModel.studyStreak.collectAsStateWithLifecycle(initialValue = 0)
-    var selectedTab by remember { mutableStateOf(AppTab.Read) }
+    var selectedTab by remember { mutableStateOf(AppTab.Home) }
+    var quickQuizMode by remember { mutableStateOf(true) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.error) {
         state.error?.let { snackbar.showSnackbar(it) }
@@ -111,18 +124,22 @@ fun HifthApp(viewModel: HifthViewModel) {
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             NavigationBar {
-                AppTab.entries.forEach { tab ->
+                AppTab.entries.filterNot { it == AppTab.Listen }.forEach { tab ->
                     NavigationBarItem(
                         selected = selectedTab == tab,
-                        onClick = { selectedTab = tab },
+                        onClick = {
+                            if (tab == AppTab.Quiz) quickQuizMode = true
+                            selectedTab = tab
+                        },
                         icon = {
                             Icon(
                                 when (tab) {
+                                    AppTab.Home -> Icons.Default.Home
                                     AppTab.Read -> Icons.Default.MenuBook
-                                    AppTab.Practice -> Icons.Default.School
-                                    AppTab.Plan -> Icons.Default.Book
+                                    AppTab.Hifz -> Icons.Default.Book
+                                    AppTab.Quiz -> Icons.Default.Checklist
                                     AppTab.Progress -> Icons.Default.Insights
-                                    AppTab.Record -> Icons.Default.Headphones
+                                    AppTab.Listen -> Icons.Default.Headphones
                                 },
                                 contentDescription = tab.label
                             )
@@ -134,11 +151,34 @@ fun HifthApp(viewModel: HifthViewModel) {
         }
     ) { padding ->
         when (selectedTab) {
+            AppTab.Home -> HomeScreen(
+                state = state,
+                memorizedCount = memorized.size,
+                vocabularyCount = savedWords.size,
+                plans = plans,
+                streak = streak,
+                onTab = {
+                    if (it == AppTab.Quiz) quickQuizMode = true
+                    selectedTab = it
+                },
+                onOpenChapter = { chapterId -> viewModel.loadChapter(chapterId); selectedTab = AppTab.Read },
+                modifier = Modifier.padding(padding)
+            )
             AppTab.Read -> ReadScreen(state, viewModel, Modifier.padding(padding))
-            AppTab.Practice -> PracticeScreen(state, memorized, weakSpots, viewModel, Modifier.padding(padding))
-            AppTab.Plan -> PlanScreen(state, plans, viewModel, Modifier.padding(padding))
+            AppTab.Hifz -> PlanScreen(
+                state = state,
+                plans = plans,
+                viewModel = viewModel,
+                onStartPractice = { quick ->
+                    quickQuizMode = quick
+                    selectedTab = AppTab.Quiz
+                },
+                onOpenProgress = { selectedTab = AppTab.Progress },
+                modifier = Modifier.padding(padding)
+            )
+            AppTab.Quiz -> PracticeScreen(state, memorized, weakSpots, savedWords, viewModel, quickQuizMode, Modifier.padding(padding))
             AppTab.Progress -> ProgressScreen(memorized, savedWords, plans, streak, viewModel, Modifier.padding(padding))
-            AppTab.Record -> RecordScreen(state, recordings, viewModel, Modifier.padding(padding))
+            AppTab.Listen -> RecordScreen(state, recordings, viewModel, onBack = { selectedTab = AppTab.Home }, modifier = Modifier.padding(padding))
         }
     }
 
@@ -186,6 +226,144 @@ fun HifthApp(viewModel: HifthViewModel) {
             },
             confirmButton = { TextButton(onClick = viewModel::dismissTafsir) { Text("Done") } }
         )
+    }
+}
+
+@Composable
+private fun HomeScreen(
+    state: HifthState,
+    memorizedCount: Int,
+    vocabularyCount: Int,
+    plans: List<StudyPlan>,
+    streak: Int,
+    onTab: (AppTab) -> Unit,
+    onOpenChapter: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val currentChapter = state.chapters.firstOrNull { it.id == state.selectedChapter }
+    val featuredChapters = listOf(1, 36, 55, 67, 112).mapNotNull { id -> state.chapters.firstOrNull { it.id == id } }
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, top = 20.dp, end = 16.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                androidx.compose.foundation.layout.Box(
+                    Modifier.size(30.dp).background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("ه", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, fontSize = 19.sp)
+                }
+                Text("Hifth", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.height(18.dp))
+            Text("P E A C E F U L   S T U D Y", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+            Text("Hifth", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+                "وَرَتِّلِ ٱلْقُرْءَانَ تَرْتِيلًا",
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.End,
+                style = MaterialTheme.typography.headlineSmall.copy(textDirection = TextDirection.Rtl, color = MaterialTheme.colorScheme.primary)
+            )
+            Text("Recite, hide, type, and listen — a calm companion for Hifz and language.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MetricCard("Streak", "${streak}d", "days", Modifier.weight(1f))
+                MetricCard("Memorized", "$memorizedCount", "ayahs", Modifier.weight(1f))
+                MetricCard("Vocab", "$vocabularyCount", "words", Modifier.weight(1f))
+            }
+        }
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable { onTab(AppTab.Read) },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(18.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("CONTINUE READING", color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelSmall)
+                        Text(currentChapter?.name ?: "Browse the Quran", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleLarge)
+                        Text(currentChapter?.translatedName.orEmpty(), color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.76f))
+                    }
+                    Text(currentChapter?.nameArabic.orEmpty(), fontSize = 27.sp, color = MaterialTheme.colorScheme.onPrimary, textDirection = TextDirection.Rtl)
+                }
+            }
+        }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QuickActionCard("Listen", "Read along", Icons.Default.Headphones, Modifier.weight(1f)) { onTab(AppTab.Listen) }
+                    QuickActionCard("Memorize", "Build a set", Icons.Default.Book, Modifier.weight(1f)) { onTab(AppTab.Hifz) }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QuickActionCard("Queezers", "Test recall", Icons.Default.Checklist, Modifier.weight(1f)) { onTab(AppTab.Quiz) }
+                    QuickActionCard("Mushaf", "Surahs & juz", Icons.Default.MenuBook, Modifier.weight(1f)) { onTab(AppTab.Read) }
+                }
+            }
+        }
+        if (plans.isNotEmpty()) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Current Hifz set", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                        TextButton(onClick = { onTab(AppTab.Hifz) }) { Text("Open tools") }
+                    }
+                    Card(Modifier.fillMaxWidth().clickable { onTab(AppTab.Hifz) }) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text(plans.first().title, fontWeight = FontWeight.SemiBold)
+                            Text("${plans.first().verseKeys.size} ayahs · ${plans.first().verseKeys.firstOrNull().orEmpty()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        }
+        if (featuredChapters.isNotEmpty()) {
+            item { Text("Start with a short surah", fontWeight = FontWeight.SemiBold) }
+            items(featuredChapters, key = { "featured-${it.id}" }) { chapter ->
+                Card(Modifier.fillMaxWidth().clickable { onOpenChapter(chapter.id) }) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "${chapter.id}",
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.small).padding(horizontal = 11.dp, vertical = 9.dp),
+                            color = MaterialTheme.colorScheme.secondary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(chapter.name, fontWeight = FontWeight.Medium)
+                            Text("${chapter.verseCount} ayahs · ${chapter.translatedName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(chapter.nameArabic, fontSize = 23.sp, color = MaterialTheme.colorScheme.primary, textDirection = TextDirection.Rtl)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickActionCard(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Card(modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Text(title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
@@ -311,7 +489,7 @@ private fun ReadScreen(state: HifthState, viewModel: HifthViewModel, modifier: M
                                 )
                             }
                         }
-                        TextButton(onClick = viewModel::loadRecitationFiles) { Text("Reload") }
+                        TextButton(onClick = { viewModel.loadRecitationFiles() }) { Text("Reload") }
                     }
                 }
             }
@@ -389,14 +567,29 @@ private fun VerseCard(
     onPlay: () -> Unit
 ) {
     Card(
-        border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
+        ),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(verse.key, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                androidx.compose.foundation.layout.Box(
+                    modifier = Modifier.size(28.dp).background(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = MaterialTheme.shapes.small
+                    ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(verse.verseNumber.toString(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                }
+                Text(verse.key, modifier = Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
                 if (verse.memorizedAt != null) {
                     Text("Memorized · ${formatDate(verse.memorizedAt)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                }
+                IconButton(onClick = onPlay) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = "Play ayah audio", tint = MaterialTheme.colorScheme.primary)
                 }
                 Checkbox(checked = selected, onCheckedChange = { onSelectedChange() })
             }
@@ -407,14 +600,15 @@ private fun VerseCard(
                 style = MaterialTheme.typography.headlineSmall.copy(
                     fontSize = fontSize.sp,
                     lineHeight = (fontSize * 1.8f).sp,
-                    textDirection = TextDirection.Rtl
+                    textDirection = TextDirection.Rtl,
+                    fontFamily = FontFamily.Serif
                 )
             )
             if (verse.words.isNotEmpty()) {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.End) {
-                    verse.words.forEach { word ->
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.Start) {
+                    verse.words.asReversed().filter { it.text.isNotBlank() && it.charType != "end" }.forEach { word ->
                         TextButton(onClick = { onWord(word) }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                            Text(word.text, fontSize = (fontSize * 0.72f).sp, textDirection = TextDirection.Rtl)
+                            Text(word.text, fontSize = (fontSize * 0.72f).sp, textDirection = TextDirection.Rtl, fontFamily = FontFamily.Serif)
                         }
                     }
                 }
@@ -438,9 +632,19 @@ private fun WordDetailsDialog(
     onDismiss: () -> Unit,
     onSave: () -> Unit
 ) {
+    val audio = remember { AudioController() }
+    DisposableEffect(audio) { onDispose { audio.release() } }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(word.text, textAlign = TextAlign.End, modifier = Modifier.fillMaxWidth(), fontSize = 30.sp) },
+        title = {
+            Text(
+                word.text,
+                textAlign = TextAlign.End,
+                modifier = Modifier.fillMaxWidth(),
+                fontSize = 30.sp,
+                fontFamily = FontFamily.Serif
+            )
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Text("Ayah $verseKey", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -452,7 +656,15 @@ private fun WordDetailsDialog(
                 Text("Morphology fields depend on Quran.com content availability.", style = MaterialTheme.typography.labelSmall)
             }
         },
-        confirmButton = { TextButton(onClick = onSave) { Text("Save word") } },
+        confirmButton = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    enabled = !word.audioUrl.isNullOrBlank(),
+                    onClick = { word.audioUrl?.let(::resolveWordAudio)?.let(audio::play) }
+                ) { Text("Listen") }
+                TextButton(onClick = onSave) { Text("Save word") }
+            }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
 }
@@ -480,10 +692,13 @@ private fun PracticeScreen(
     state: HifthState,
     memorized: List<QuranVerse>,
     weakSpots: List<WeakSpot>,
+    savedWords: List<SavedVocabulary>,
     viewModel: HifthViewModel,
+    initialQuickQuiz: Boolean,
     modifier: Modifier = Modifier
 ) {
     val source = if (state.verses.isNotEmpty()) state.verses else memorized
+    var quickQuiz by remember(initialQuickQuiz) { mutableStateOf(initialQuickQuiz) }
     var verseIndex by remember { mutableIntStateOf(0) }
     var typedAnswer by remember { mutableStateOf("") }
     var checked by remember { mutableStateOf(false) }
@@ -511,12 +726,22 @@ private fun PracticeScreen(
             Text("Recall, check each word, and revisit the ayahs that need another look.")
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = !translationQuiz, onClick = { translationQuiz = false; checked = false; typedAnswer = "" }, label = { Text("Hifz") })
-                FilterChip(selected = translationQuiz, onClick = { translationQuiz = true; checked = false; typedAnswer = "" }, label = { Text("Translation") })
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !quickQuiz, onClick = { quickQuiz = false }, label = { Text("Recall") })
+                    FilterChip(selected = quickQuiz, onClick = { quickQuiz = true }, label = { Text("Quick quiz") })
+                }
+                if (!quickQuiz) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = !translationQuiz, onClick = { translationQuiz = false; checked = false; typedAnswer = "" }, label = { Text("Hifz") })
+                        FilterChip(selected = translationQuiz, onClick = { translationQuiz = true; checked = false; typedAnswer = "" }, label = { Text("Translation") })
+                    }
+                }
             }
         }
-        if (verse == null) {
+        if (quickQuiz) {
+            item { PracticeQuizScreen(source, savedWords, viewModel::recordPracticeAttempt) }
+        } else if (verse == null) {
             item {
                 Card {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -538,14 +763,17 @@ private fun PracticeScreen(
                                 style = MaterialTheme.typography.headlineSmall.copy(textDirection = TextDirection.Rtl)
                             )
                         }
-                        if (reveal || translationQuiz) Text(verse.translation)
+                        if (reveal) Text(verse.translation)
                         if (!checked) {
                             OutlinedTextField(
                                 value = typedAnswer,
                                 onValueChange = { typedAnswer = it },
                                 label = { Text(if (translationQuiz) "Type the meaning" else "Type the ayah") },
                                 minLines = 3,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                    textDirection = if (translationQuiz) TextDirection.Ltr else TextDirection.Rtl
+                                )
                             )
                         } else {
                             Text(buildAnnotatedString {
@@ -573,13 +801,13 @@ private fun PracticeScreen(
                             if (!checked) {
                                 Button(onClick = { reveal = !reveal }) { Text(if (reveal) "Hide ayah" else "Reveal ayah") }
                                 Button(
-                                                    enabled = typedAnswer.isNotBlank() && targetWords.isNotEmpty(),
+                                    enabled = typedAnswer.isNotBlank() && targetWords.isNotEmpty(),
                                     onClick = {
                                         checked = true
-                                                        viewModel.recordPracticeAttempt(verse.key, errorPercent)
-                                                        if (errorPercent == 0 && !translationQuiz) viewModel.markMemorized(verse.key)
-                                                    }
-                                                ) { Text("Check") }
+                                        viewModel.recordPracticeAttempt(verse.key, errorPercent)
+                                        if (errorPercent == 0 && !translationQuiz) viewModel.markMemorized(verse.key)
+                                    }
+                                ) { Text("Check") }
                             } else {
                                 Button(onClick = {
                                     verseIndex = (verseIndex + 1) % source.size
@@ -593,13 +821,13 @@ private fun PracticeScreen(
                     }
                 }
             }
-            item {
-                Text("Weak spots", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                val weakest = weakSpots.filter { it.errorPoints > 0 }.sortedByDescending(WeakSpot::errorPoints).take(5)
-                if (weakest.isEmpty()) Text("Missed ayahs will appear here as you practice.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                weakest.forEach { item ->
-                    Text("Ayah ${item.verseKey} · ${item.errorPoints} accumulated error points in ${item.attempts} attempts", color = MaterialTheme.colorScheme.error)
-                }
+        }
+        item {
+            Text("Weak spots", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            val weakest = weakSpots.filter { it.errorPoints > 0 }.sortedByDescending(WeakSpot::errorPoints).take(5)
+            if (weakest.isEmpty()) Text("Missed ayahs will appear here as you practice.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            weakest.forEach { item ->
+                Text("Ayah ${item.verseKey} · ${item.errorPoints} accumulated error points in ${item.attempts} attempts", color = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -610,28 +838,28 @@ private fun PlanScreen(
     state: HifthState,
     plans: List<StudyPlan>,
     viewModel: HifthViewModel,
+    onStartPractice: (quickQuiz: Boolean) -> Unit,
+    onOpenProgress: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var title by remember { mutableStateOf("") }
-    var start by remember { mutableStateOf("1") }
-    var end by remember { mutableStateOf("5") }
-    var mode by remember { mutableStateOf("Numbers") }
-    val chapter = state.chapters.firstOrNull { it.id == state.selectedChapter }
-    val startNumber = start.toIntOrNull() ?: 1
-    val endNumber = end.toIntOrNull() ?: startNumber
-    val rangeKeys = if (
-        startNumber in 1..endNumber &&
-        endNumber <= (chapter?.verseCount ?: 0) &&
-        endNumber - startNumber < 500
-    ) {
-        (startNumber..endNumber).map { "${state.selectedChapter}:$it" }
-    } else emptyList()
-    val selectedKeys = if (mode == "Numbers") rangeKeys else state.selectedVerses.sortedWith(
-        compareBy(
-            { it.substringBefore(":").toIntOrNull() ?: 0 },
-            { it.substringAfter(":").toIntOrNull() ?: 0 }
+    var selectionText by remember { mutableStateOf("") }
+    var selectedChapterId by remember { mutableIntStateOf(state.selectedChapter) }
+    var showChapterMenu by remember { mutableStateOf(false) }
+    val selectedChapter = state.chapters.firstOrNull { it.id == selectedChapterId }
+    val parsedSelection = remember(selectionText, state.chapters) { parseVerseSelection(selectionText, state.chapters) }
+    val selectedKeys = remember(parsedSelection.verseKeys, state.selectedVerses) {
+        (parsedSelection.verseKeys + state.selectedVerses).distinct().sortedWith(
+            compareBy(
+                { it.substringBefore(":").toIntOrNull() ?: 0 },
+                { it.substringAfter(":").toIntOrNull() ?: 0 }
+            )
         )
-    )
+    }
+    val selectedNumbers = selectedKeys.asSequence()
+        .filter { it.substringBefore(":").toIntOrNull() == selectedChapterId }
+        .mapNotNull { it.substringAfter(":").toIntOrNull() }
+        .toSet()
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -639,33 +867,111 @@ private fun PlanScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text("Make a memorization plan", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("Choose ayahs by number or select them in Read using the checkboxes.")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Hifz", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text("Select ayahs by number or tap them, then begin a study session.")
+                }
+                TextButton(onClick = onOpenProgress) { Text("Completed") }
+            }
         }
         item {
             Card {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Plan name") }, modifier = Modifier.fillMaxWidth())
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected = mode == "Numbers", onClick = { mode = "Numbers" }, label = { Text("By numbers") })
-                        FilterChip(selected = mode == "Selection", onClick = { mode = "Selection" }, label = { Text("Interactive selection") })
+                    Text("Type numbers", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    OutlinedTextField(
+                        value = selectionText,
+                        onValueChange = { selectionText = it },
+                        placeholder = { Text("1, 36, 67:1-10") },
+                        supportingText = { Text("Examples: 1, 18, 2:255, 67:1-30, 78-114") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 1
+                    )
+                    if (selectedKeys.isEmpty() && selectionText.isNotBlank()) {
+                        parsedSelection.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                     }
-                    if (mode == "Numbers") {
-                        Text("${chapter?.name.orEmpty()} · surah ${state.selectedChapter}")
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(value = start, onValueChange = { start = it.filter(Char::isDigit).take(4) }, label = { Text("From") }, modifier = Modifier.weight(1f))
-                            OutlinedTextField(value = end, onValueChange = { end = it.filter(Char::isDigit).take(4) }, label = { Text("To") }, modifier = Modifier.weight(1f))
+                    Text("Tap ayahs", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        BoxMenuButton(
+                            text = selectedChapter?.let { "${it.id}. ${it.name} (${it.verseCount})" } ?: "Choose surah",
+                            expanded = showChapterMenu,
+                            onExpandedChange = { showChapterMenu = it }
+                        ) {
+                            state.chapters.forEach { chapter ->
+                                DropdownMenuItem(
+                                    text = { Text("${chapter.id}. ${chapter.name} (${chapter.verseCount})") },
+                                    onClick = {
+                                        selectedChapterId = chapter.id
+                                        showChapterMenu = false
+                                        viewModel.loadChapter(chapter.id)
+                                    }
+                                )
+                            }
                         }
-                    } else {
-                        Text("${selectedKeys.size} ayahs selected in Read")
+                        TextButton(
+                            onClick = {
+                                selectedChapter?.let { chapter ->
+                                    selectionText = listOf(selectionText.trim().trimEnd(','), chapter.id.toString())
+                                        .filter(String::isNotBlank).joinToString(", ")
+                                }
+                            }
+                        ) { Text("Whole surah") }
                     }
-                    Text("${selectedKeys.size} ayahs · ${selectedKeys.firstOrNull().orEmpty()}${if (selectedKeys.size > 1) " – ${selectedKeys.last()}" else ""}")
+                    selectedChapter?.let { chapter ->
+                        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                            columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(7),
+                            modifier = Modifier.fillMaxWidth().height(208.dp),
+                            contentPadding = PaddingValues(2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            gridItems(chapter.verseCount, key = { it + 1 }) { index ->
+                                val verseNumber = index + 1
+                                val isSelected = verseNumber in selectedNumbers
+                                androidx.compose.material3.Surface(
+                                    onClick = { viewModel.togglePlanVerse("${chapter.id}:$verseNumber") },
+                                    shape = MaterialTheme.shapes.small,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                                ) {
+                                    Text(
+                                        "$verseNumber",
+                                        modifier = Modifier.padding(vertical = 9.dp),
+                                        textAlign = TextAlign.Center,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Text("Selected set", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (selectedKeys.isEmpty()) "No ayahs yet. Add a surah or a range to begin."
+                        else "${selectedKeys.size} ayahs · ${selectedKeys.take(3).joinToString(", ")}${if (selectedKeys.size > 3) " …" else ""}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (selectionText.isNotBlank() || state.selectedVerses.isNotEmpty()) {
+                        TextButton(onClick = { selectionText = ""; viewModel.clearPlanSelection() }) { Text("Clear selection") }
+                    }
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("Name this study set") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
                     Button(
-                        onClick = { viewModel.savePlan(title, selectedKeys) },
+                        onClick = { viewModel.savePlan(title, selectedKeys); selectionText = ""; title = "" },
                         enabled = title.isNotBlank() && selectedKeys.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("Save plan") }
+                    ) { Text("Save study set") }
                 }
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                QuickActionCard("Hide & reveal", "Recall from memory", Icons.Default.School, Modifier.weight(1f)) { onStartPractice(false) }
+                QuickActionCard("Queezers", "Test your recall", Icons.Default.Checklist, Modifier.weight(1f)) { onStartPractice(true) }
             }
         }
         item { Text("Saved plans", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
@@ -762,6 +1068,7 @@ private fun RecordScreen(
     state: HifthState,
     recordings: List<RecitationRecording>,
     viewModel: HifthViewModel,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -817,6 +1124,7 @@ private fun RecordScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
+            TextButton(onClick = onBack) { Text("‹ Home") }
             Text("Listen & recite", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text("Listen to a reciter, record your own reading, and review it with playback controls.")
         }

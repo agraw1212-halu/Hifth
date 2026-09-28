@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.Hifth" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#3D9A82</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:statusBarColor">#08120F</item>
+        <item name="android:navigationBarColor">#08120F</item>
+    </style>
+</resources>
