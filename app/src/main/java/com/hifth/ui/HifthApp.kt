@@ -135,7 +135,7 @@ fun HifthApp(viewModel: HifthViewModel) {
     ) { padding ->
         when (selectedTab) {
             AppTab.Read -> ReadScreen(state, viewModel, Modifier.padding(padding))
-            AppTab.Practice -> PracticeScreen(state, memorized, weakSpots, viewModel, Modifier.padding(padding))
+            AppTab.Practice -> PracticeScreen(state, memorized, weakSpots, savedWords, viewModel, Modifier.padding(padding))
             AppTab.Plan -> PlanScreen(state, plans, viewModel, Modifier.padding(padding))
             AppTab.Progress -> ProgressScreen(memorized, savedWords, plans, streak, viewModel, Modifier.padding(padding))
             AppTab.Record -> RecordScreen(state, recordings, viewModel, Modifier.padding(padding))
@@ -480,10 +480,12 @@ private fun PracticeScreen(
     state: HifthState,
     memorized: List<QuranVerse>,
     weakSpots: List<WeakSpot>,
+    savedWords: List<SavedVocabulary>,
     viewModel: HifthViewModel,
     modifier: Modifier = Modifier
 ) {
     val source = if (state.verses.isNotEmpty()) state.verses else memorized
+    var quickQuiz by remember { mutableStateOf(false) }
     var verseIndex by remember { mutableIntStateOf(0) }
     var typedAnswer by remember { mutableStateOf("") }
     var checked by remember { mutableStateOf(false) }
@@ -511,12 +513,22 @@ private fun PracticeScreen(
             Text("Recall, check each word, and revisit the ayahs that need another look.")
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = !translationQuiz, onClick = { translationQuiz = false; checked = false; typedAnswer = "" }, label = { Text("Hifz") })
-                FilterChip(selected = translationQuiz, onClick = { translationQuiz = true; checked = false; typedAnswer = "" }, label = { Text("Translation") })
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !quickQuiz, onClick = { quickQuiz = false }, label = { Text("Recall") })
+                    FilterChip(selected = quickQuiz, onClick = { quickQuiz = true }, label = { Text("Quick quiz") })
+                }
+                if (!quickQuiz) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = !translationQuiz, onClick = { translationQuiz = false; checked = false; typedAnswer = "" }, label = { Text("Hifz") })
+                        FilterChip(selected = translationQuiz, onClick = { translationQuiz = true; checked = false; typedAnswer = "" }, label = { Text("Translation") })
+                    }
+                }
             }
         }
-        if (verse == null) {
+        if (quickQuiz) {
+            item { PracticeQuizScreen(source, savedWords, viewModel::recordPracticeAttempt) }
+        } else if (verse == null) {
             item {
                 Card {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -593,13 +605,13 @@ private fun PracticeScreen(
                     }
                 }
             }
-            item {
-                Text("Weak spots", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                val weakest = weakSpots.filter { it.errorPoints > 0 }.sortedByDescending(WeakSpot::errorPoints).take(5)
-                if (weakest.isEmpty()) Text("Missed ayahs will appear here as you practice.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                weakest.forEach { item ->
-                    Text("Ayah ${item.verseKey} · ${item.errorPoints} accumulated error points in ${item.attempts} attempts", color = MaterialTheme.colorScheme.error)
-                }
+        }
+        item {
+            Text("Weak spots", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            val weakest = weakSpots.filter { it.errorPoints > 0 }.sortedByDescending(WeakSpot::errorPoints).take(5)
+            if (weakest.isEmpty()) Text("Missed ayahs will appear here as you practice.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            weakest.forEach { item ->
+                Text("Ayah ${item.verseKey} · ${item.errorPoints} accumulated error points in ${item.attempts} attempts", color = MaterialTheme.colorScheme.error)
             }
         }
     }
