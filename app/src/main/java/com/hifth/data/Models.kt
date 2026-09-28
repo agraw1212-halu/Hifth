@@ -15,7 +15,10 @@ data class QuranWord(
     val transliteration: String,
     val root: String = "",
     val lemma: String = "",
-    val grammar: String = ""
+    val grammar: String = "",
+    val charType: String = "word",
+    val audioUrl: String? = null,
+    val position: Int? = null
 )
 
 data class QuranVerse(

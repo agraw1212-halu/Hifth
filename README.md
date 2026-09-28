@@ -8,11 +8,13 @@ Hifth is an offline-first Android Quran memorization and study app built with Ko
 - Read Uthmani Arabic with adjustable type size and an Arabic-only switch; open an ayah mini-reader, translations, and available tafsir.
 - Choose a reciter, stream ayah audio, and tap individual words for their translation and transliteration. Save words to a local vocabulary list.
 - Build and save memorization plans by ayah numbers or by selecting ayahs while reading.
-- Practice recall or translation with hide/reveal, word-level checking, corrections, error percentages, and saved weak spots; take quick quizzes on ayah continuation, word meanings, and translations.
+- Practice recall or translation with hide/reveal, word-level checking, corrections, error percentages, and saved weak spots. Take quick multiple-choice quizzes on ayah continuation, word meanings, and translations.
 - Track a daily study streak from reading, practice, and quiz sessions.
 - Mark ayahs memorized and browse completed sets with their dates.
 - Record recitation to app-private storage, associate it with an ayah, and play saved recordings with seek controls.
 - Follow system light/dark mode with a quiet emerald-and-gold Material 3 palette.
+- Start from a dashboard with study streaks, memorization and vocabulary totals, quick actions, and featured surahs.
+- Build Hifz sets with tap-to-select ayahs or compact expressions such as `1, 36, 2:255, 67:1-10, 78-114`; invalid surah/ayah ranges are explained before saving.
 
 ## Build and test
 
